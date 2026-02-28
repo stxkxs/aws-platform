@@ -15,9 +15,9 @@ make apply ENVIRONMENT=staging                # apply all components in env
 
 ## Architecture
 
-- **19 components** across 4 environments (dev, staging, production, org)
-- **Dependency chain:** `network → cluster → {druid, pipeline, llm, gateway, rag, mlops, governance, observability, secrets}`
-- `cost` and `dns` are standalone (no dependencies)
+- **24 components** across 4 environments (dev, staging, production, org)
+- **Dependency chain:** `network → cluster → {druid, pipeline, llm, gateway, rag, mlops, governance, observability, secrets, cluster-addons, cluster-bootstrap}`
+- `cost`, `dns`, `backup`, `break-glass`, and `service-quotas` are standalone (no dependencies)
 - `org-*` components deploy to the management account only
 - **GitOps boundary:** OpenTofu deploys AWS resources + Cilium + ArgoCD. ArgoCD manages in-cluster workloads via [aws-eks-gitops](https://github.com/stxkxs/aws-eks-gitops)
 
@@ -71,4 +71,5 @@ modules/irsa/            # shared IRSA role factory
 - `ci.yml` — PRs: fmt, validate, tflint, checkov (security scan), plan matrix
 - `deploy.yml` — manual dispatch: plan or apply, uses GitHub environment protection
 - `destroy.yml` — manual dispatch: dev/staging only, requires confirmation string
+- `drift.yml` — scheduled weekday drift detection on production, creates GitHub issues
 - Auth: AWS OIDC via `AWS_ROLE_ARN` GitHub Actions variable

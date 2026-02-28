@@ -1,6 +1,6 @@
 # aws-platform
 
-![OpenTofu](https://img.shields.io/badge/OpenTofu-%3E%3D1.8-blue?logo=opentofu)
+![OpenTofu](https://img.shields.io/badge/OpenTofu-%3E%3D1.11-blue?logo=opentofu)
 ![Terragrunt](https://img.shields.io/badge/Terragrunt-latest-blue?logo=terraform)
 ![AWS](https://img.shields.io/badge/AWS-Platform-FF9900?logo=amazonaws)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -22,21 +22,24 @@ OpenTofu + Terragrunt monorepo for multi-tenant AWS platform infrastructure.
 │                                                                     │
 │  ┌──────────┐    ┌──────────┐    ┌──────────────────────────────┐  │
 │  │ network  │───▶│ cluster  │───▶│ druid · pipeline · llm       │  │
-│  │          │    │          │    │ gateway · rag · mlops         │  │
-│  │          │    │          │    │ governance · observability    │  │
-│  │          │    │          │    │ secrets                       │  │
+│  │          │    │          │───▶│ gateway · rag · mlops         │  │
+│  │          │    │          │───▶│ governance · observability    │  │
+│  │          │    │          │───▶│ secrets                       │  │
+│  │          │    │          │───▶│ cluster-addons                │  │
+│  │          │    │          │───▶│ cluster-bootstrap             │  │
 │  └──────────┘    └──────────┘    └──────────────────────────────┘  │
 │                                                                     │
-│  ┌──────────┐    ┌──────────┐                                      │
-│  │   cost   │    │   dns    │    (standalone — no dependencies)     │
-│  └──────────┘    └──────────┘                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │ backup · break-glass · service-quotas · cost · dns           │  │
+│  │ (standalone — no dependencies)                                │  │
+│  └──────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 **Dependency chain:**
 
 ```
-network → cluster ─┬─ druid*        (* also reads network outputs)
+network → cluster ─┬─ druid*           (* also reads network outputs)
                    ├─ pipeline*
                    ├─ llm*
                    ├─ gateway
@@ -44,7 +47,9 @@ network → cluster ─┬─ druid*        (* also reads network outputs)
                    ├─ mlops
                    ├─ governance
                    ├─ observability
-                   └─ secrets
+                   ├─ secrets
+                   ├─ cluster-addons
+                   └─ cluster-bootstrap
 ```
 
 **GitOps boundary:** OpenTofu deploys AWS resources + Cilium + ArgoCD. ArgoCD manages everything else via [aws-eks-gitops](https://github.com/stxkxs/aws-eks-gitops).
@@ -59,9 +64,11 @@ s3://{account_id}-{region}-tfstate/{env}/{component}/terraform.tfstate
 
 ```
 aws-platform/
-├── components/              # OpenTofu root modules (19 components)
+├── components/              # OpenTofu root modules (24 components)
 │   ├── network/             # VPC, subnets, NAT, VPC endpoints, flow logs
 │   ├── cluster/             # EKS, Karpenter, Cilium, ArgoCD, IRSA, S3
+│   ├── cluster-addons/      # Velero, OpenCost, KEDA, Argo Events/Workflows
+│   ├── cluster-bootstrap/   # Cilium CNI + ArgoCD Helm bootstrap
 │   ├── druid/               # Per-tenant Aurora, MSK, S3, IRSA
 │   ├── pipeline/            # Per-tenant Batch, S3, SQS, IRSA
 │   ├── gateway/             # Per-tenant API Gateway, WAF, Cognito, IRSA
@@ -71,6 +78,9 @@ aws-platform/
 │   ├── governance/          # Per-tenant governance resources
 │   ├── observability/       # SNS topics, CloudWatch alarms + dashboard
 │   ├── secrets/             # KMS, Secrets Manager, External Secrets IRSA
+│   ├── backup/              # AWS Backup plans, vault lock
+│   ├── break-glass/         # Emergency access IAM roles + SNS alerts
+│   ├── service-quotas/      # Service quota monitoring + alarms
 │   ├── cost/                # Budgets, anomaly detection, CUR
 │   ├── dns/                 # Route53 zones, ACM certs, DNSSEC
 │   ├── org-identity/        # AWS SSO permission sets + assignments
@@ -81,8 +91,8 @@ aws-platform/
 │   └── org-scp/             # Service Control Policies
 ├── live/                    # Terragrunt environment configs
 │   ├── terragrunt.hcl       # Root config (provider, remote state)
-│   ├── _envcommon/          # Shared dependency + input wiring (19 .hcl)
-│   ├── dev/                 # Development (13 components + env.hcl)
+│   ├── _envcommon/          # Shared dependency + input wiring (24 .hcl)
+│   ├── dev/                 # Development (18 components + env.hcl)
 │   ├── staging/             # Staging
 │   ├── production/          # Production
 │   └── org/                 # Organization-level (6 components + env.hcl)
@@ -96,7 +106,7 @@ aws-platform/
 
 ## Prerequisites
 
-- [OpenTofu](https://opentofu.org/) >= 1.8.0
+- [OpenTofu](https://opentofu.org/) >= 1.11.0
 - [Terragrunt](https://terragrunt.gruntwork.io/) (latest)
 - [AWS CLI](https://aws.amazon.com/cli/) v2, configured with credentials
 - [TFLint](https://github.com/terraform-linters/tflint) with AWS plugin
@@ -147,6 +157,8 @@ Deployed per environment (`live/{dev,staging,production}/`).
 |-----------|---------|--------------|:------------:|
 | **network** | VPC, subnets, NAT, VPC endpoints, flow logs | — | |
 | **cluster** | EKS, Karpenter, Cilium, ArgoCD, IRSA roles, S3 buckets | network | |
+| **cluster-addons** | Velero, OpenCost, KEDA, Argo Events/Workflows IRSA | cluster | |
+| **cluster-bootstrap** | Cilium CNI + ArgoCD Helm bootstrap | cluster | |
 | **druid** | Apache Druid infra — Aurora MySQL, MSK, S3 | network, cluster | ✓ |
 | **pipeline** | Batch pipelines — AWS Batch, S3 (raw/staging/curated), SQS | network, cluster | ✓ |
 | **llm** | LLM serving — EFS, DynamoDB, SQS, S3 | network, cluster | ✓ |
@@ -156,6 +168,9 @@ Deployed per environment (`live/{dev,staging,production}/`).
 | **governance** | Data governance resources | cluster | ✓ |
 | **observability** | SNS (critical/warning/info), CloudWatch alarms + dashboard | cluster | |
 | **secrets** | KMS key, Secrets Manager, External Secrets IRSA | cluster | |
+| **backup** | AWS Backup plans, vault lock, notifications | — | |
+| **break-glass** | Emergency IAM roles, SNS alerts, permissions boundary | — | |
+| **service-quotas** | Service quota monitoring, CloudWatch alarms | — | |
 | **cost** | Budgets, anomaly detection, CUR | — | |
 | **dns** | Route53 zones, ACM certificates, DNSSEC | — | |
 
@@ -222,7 +237,7 @@ make validate && make lint    # pre-commit checks
 
 ## CI/CD
 
-Three GitHub Actions workflows, all using OpenTofu 1.8.0 + Terragrunt + AWS OIDC auth.
+Four GitHub Actions workflows, all using OpenTofu 1.11.5 + Terragrunt 0.99.4 + AWS OIDC auth.
 
 ### ci.yml — Pull Request Validation
 
@@ -231,9 +246,9 @@ Triggers on PRs to `main` and pushes to `main`.
 | Job | What it does |
 |-----|-------------|
 | **fmt** | `tofu fmt -check` on components/ and modules/ |
-| **validate** | `tofu init && tofu validate` per component (matrix) |
+| **validate** | `tofu init && tofu validate` per component (matrix of 24) |
 | **tflint** | Recursive lint with AWS plugin |
-| **checkov** | Security scan on components/ (soft fail) |
+| **checkov** | Security scan on components/ |
 | **plan** | Terragrunt plan across envs × components (PRs only) |
 
 ### deploy.yml — Manual Deploy
@@ -243,6 +258,10 @@ Workflow dispatch with inputs: environment, component, action (plan/apply). Uses
 ### destroy.yml — Manual Destroy
 
 Workflow dispatch for dev/staging only (production excluded). Requires typing the environment name as confirmation. Runs `terragrunt destroy`.
+
+### drift.yml — Drift Detection
+
+Scheduled weekday runs (6 AM UTC, Mon–Fri) against production. Monitors 8 core components: `network`, `cluster`, `cluster-addons`, `cluster-bootstrap`, `dns`, `cost`, `observability`, `secrets`. Creates GitHub issues labelled `drift` when infrastructure has diverged from state.
 
 ### Setup
 
@@ -269,10 +288,21 @@ This creates the S3 bucket (versioned, encrypted, public access blocked).
 
 **Change region** — update `region` in `live/{env}/env.hcl`. All components inherit it via the root `terragrunt.hcl`.
 
-**Add a component** — create the OpenTofu module in `components/<name>/`, add `live/_envcommon/<name>.hcl` for dependency wiring, then add `live/{env}/<name>/terragrunt.hcl` including the envcommon config.
+**Add a component** — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist.
 
 **Remove a component** — delete the `live/{env}/<name>/` directory, the `live/_envcommon/<name>.hcl` file, and optionally the `components/<name>/` directory. Remove it from any CI matrices if referenced.
 
 **Adjust SCPs** — modify `target_ids` in the org-scp component to control which OUs or accounts the policies apply to.
 
-**Default tags** — all resources are tagged with `Environment`, `ManagedBy=opentofu`, and `Project=aws-platform` via the root provider config.
+**Default tags** — all resources are tagged via the root provider config. Tags include `Environment`, `ManagedBy`, `Project`, `CostCenter`, `BusinessUnit`, `DataClassification`, `Compliance`, and `Repository`.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Onboarding Guide](docs/onboarding.md) | New engineer setup, tool installation, codebase walkthrough |
+| [Architecture](docs/architecture.md) | Design rationale, dependency graph, layer breakdown, security model |
+| [Operations](docs/operations.md) | Day-to-day procedures, CI/CD details, tenant management |
+| [Runbooks](docs/runbooks.md) | Step-by-step procedures for common operational scenarios |
+| [Troubleshooting](docs/troubleshooting.md) | Common errors and their resolutions |
+| [Contributing](CONTRIBUTING.md) | Development workflow, adding components/tenants/environments |
