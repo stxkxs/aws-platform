@@ -1,0 +1,34 @@
+output "raw_bucket" {
+  description = "Raw data lake S3 bucket name"
+  value       = module.raw_bucket.s3_bucket_id
+}
+
+output "staging_bucket" {
+  description = "Staging data lake S3 bucket name"
+  value       = module.staging_bucket.s3_bucket_id
+}
+
+output "curated_bucket" {
+  description = "Curated data lake S3 bucket name"
+  value       = module.curated_bucket.s3_bucket_id
+}
+
+output "msk_arn" {
+  description = "MSK Serverless cluster ARN (null if disabled)"
+  value       = var.tenant_config.msk_enabled ? aws_msk_serverless_cluster.this[0].arn : null
+}
+
+output "batch_queue_arn" {
+  description = "AWS Batch job queue ARN (null if disabled)"
+  value       = var.tenant_config.batch_enabled ? aws_batch_job_queue.this[0].arn : null
+}
+
+output "sfn_arn" {
+  description = "Step Functions state machine ARN (null if disabled)"
+  value       = var.tenant_config.step_functions_enabled ? aws_sfn_state_machine.this[0].arn : null
+}
+
+output "glue_database" {
+  description = "Glue catalog database name"
+  value       = aws_glue_catalog_database.this.name
+}

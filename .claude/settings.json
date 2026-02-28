@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make *)",
+      "Bash(tofu fmt *)",
+      "Bash(tofu validate *)",
+      "Bash(tflint *)",
+      "Bash(terragrunt plan *)",
+      "Bash(terragrunt run-all plan *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git branch *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(cat *)"
+    ],
+    "deny": [
+      "Bash(terragrunt destroy *)",
+      "Bash(terragrunt run-all destroy *)",
+      "Bash(terragrunt run-all apply *)",
+      "Bash(tofu destroy *)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(cat | jq -r '.tool_input.file_path // empty') && [ -n \"$file\" ] && [[ \"$file\" == *.tf ]] && tofu fmt \"$file\" 2>/dev/null; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

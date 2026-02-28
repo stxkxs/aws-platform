@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.11.5"
+      - run: tofu fmt -check -recursive components/
+      - run: tofu fmt -check -recursive modules/
+
+  validate:
+    name: Validate (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component:
+          - backup
+          - break-glass
+          - cluster
+          - cluster-addons
+          - cluster-bootstrap
+          - cost
+          - dns
+          - druid
+          - gateway
+          - governance
+          - llm
+          - mlops
+          - network
+          - observability
+          - org-compliance
+          - org-cost
+          - org-identity
+          - org-networking
+          - org-scp
+          - org-security
+          - pipeline
+          - rag
+          - secrets
+          - service-quotas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.11.5"
+      - name: Init and Validate
+        working-directory: components/${{ matrix.component }}
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+      - run: tflint --init --config .tflint.hcl
+      - run: tflint --recursive --config .tflint.hcl
+
+  checkov:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: components/
+          framework: terraform
+          soft_fail: false
+          skip_check: CKV_AWS_144,CKV_AWS_145
+
+  plan:
+    name: Plan (${{ matrix.env }}/${{ matrix.component }})
+    needs: [validate]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Workload components × environments
+          - { env: dev, component: network }
+          - { env: dev, component: cluster }
+          - { env: dev, component: cluster-addons }
+          - { env: dev, component: cluster-bootstrap }
+          - { env: dev, component: druid }
+          - { env: dev, component: gateway }
+          - { env: dev, component: governance }
+          - { env: dev, component: llm }
+          - { env: dev, component: mlops }
+          - { env: dev, component: pipeline }
+          - { env: dev, component: rag }
+          - { env: dev, component: dns }
+          - { env: dev, component: observability }
+          - { env: dev, component: secrets }
+          - { env: dev, component: cost }
+          - { env: dev, component: backup }
+          - { env: dev, component: break-glass }
+          - { env: dev, component: service-quotas }
+          - { env: staging, component: network }
+          - { env: staging, component: cluster }
+          - { env: staging, component: cluster-addons }
+          - { env: staging, component: cluster-bootstrap }
+          - { env: staging, component: druid }
+          - { env: staging, component: gateway }
+          - { env: staging, component: governance }
+          - { env: staging, component: llm }
+          - { env: staging, component: mlops }
+          - { env: staging, component: pipeline }
+          - { env: staging, component: rag }
+          - { env: staging, component: dns }
+          - { env: staging, component: observability }
+          - { env: staging, component: secrets }
+          - { env: staging, component: cost }
+          - { env: staging, component: backup }
+          - { env: staging, component: break-glass }
+          - { env: staging, component: service-quotas }
+          - { env: production, component: network }
+          - { env: production, component: cluster }
+          - { env: production, component: cluster-addons }
+          - { env: production, component: cluster-bootstrap }
+          - { env: production, component: druid }
+          - { env: production, component: gateway }
+          - { env: production, component: governance }
+          - { env: production, component: llm }
+          - { env: production, component: mlops }
+          - { env: production, component: pipeline }
+          - { env: production, component: rag }
+          - { env: production, component: dns }
+          - { env: production, component: observability }
+          - { env: production, component: secrets }
+          - { env: production, component: cost }
+          - { env: production, component: backup }
+          - { env: production, component: break-glass }
+          - { env: production, component: service-quotas }
+          # Org components
+          - { env: org, component: org-compliance }
+          - { env: org, component: org-cost }
+          - { env: org, component: org-identity }
+          - { env: org, component: org-networking }
+          - { env: org, component: org-scp }
+          - { env: org, component: org-security }
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.11.5"
+      - uses: gruntwork-io/terragrunt-action@v3
+        with:
+          tg_version: "0.99.4"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+      - name: Plan
+        working-directory: live/${{ matrix.env }}/${{ matrix.component }}
+        run: terragrunt plan -no-color

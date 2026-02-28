@@ -1,0 +1,132 @@
+################################################################################
+# IRSA Roles for Druid Components
+################################################################################
+
+locals {
+  druid_namespace = "druid-${var.tenant_id}"
+  irsa_prefix     = "${var.environment}-druid-${var.tenant_id}"
+
+  s3_buckets = [
+    module.deepstorage_bucket.s3_bucket_arn,
+    module.indexlogs_bucket.s3_bucket_arn,
+    module.msq_bucket.s3_bucket_arn,
+  ]
+
+  s3_objects = [
+    "${module.deepstorage_bucket.s3_bucket_arn}/*",
+    "${module.indexlogs_bucket.s3_bucket_arn}/*",
+    "${module.msq_bucket.s3_bucket_arn}/*",
+  ]
+
+  s3_policy_statements = [
+    {
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+      ]
+      Resource = concat(local.s3_buckets, local.s3_objects)
+    },
+  ]
+}
+
+# Historical node role (read-only S3 access)
+module "historical_irsa" {
+  source = "../../../../modules/irsa"
+
+  role_name         = "${local.irsa_prefix}-historical"
+  oidc_provider_arn = var.oidc_provider
+  oidc_issuer       = var.oidc_issuer
+  namespace         = local.druid_namespace
+  service_account   = "druid-historical"
+
+  policy_statements = [
+    {
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+      ]
+      Resource = concat(local.s3_buckets, local.s3_objects)
+    },
+  ]
+
+  tags = local.tenant_tags
+}
+
+# Ingestion role (read/write S3 + MSK)
+module "ingestion_irsa" {
+  source = "../../../../modules/irsa"
+
+  role_name         = "${local.irsa_prefix}-ingestion"
+  oidc_provider_arn = var.oidc_provider
+  oidc_issuer       = var.oidc_issuer
+  namespace         = local.druid_namespace
+  service_account   = "druid-ingestion"
+
+  policy_statements = concat(local.s3_policy_statements, var.tenant_config.msk_enabled ? [
+    {
+      Effect = "Allow"
+      Action = [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:ReadData",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:AlterGroup",
+      ]
+      Resource = ["*"]
+    },
+  ] : [])
+
+  tags = local.tenant_tags
+}
+
+# Query role (read S3 + write MSQ results)
+module "query_irsa" {
+  source = "../../../../modules/irsa"
+
+  role_name         = "${local.irsa_prefix}-query"
+  oidc_provider_arn = var.oidc_provider
+  oidc_issuer       = var.oidc_issuer
+  namespace         = local.druid_namespace
+  service_account   = "druid-query"
+
+  policy_statements = local.s3_policy_statements
+
+  tags = local.tenant_tags
+}
+
+# MSK client role (conditional)
+module "msk_client_irsa" {
+  source = "../../../../modules/irsa"
+  count  = var.tenant_config.msk_enabled ? 1 : 0
+
+  role_name         = "${local.irsa_prefix}-msk-client"
+  oidc_provider_arn = var.oidc_provider
+  oidc_issuer       = var.oidc_issuer
+  namespace         = local.druid_namespace
+  service_account   = "druid-msk-client"
+
+  policy_statements = [
+    {
+      Effect = "Allow"
+      Action = [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeCluster",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:CreateTopic",
+        "kafka-cluster:WriteData",
+        "kafka-cluster:ReadData",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:AlterGroup",
+      ]
+      Resource = ["*"]
+    },
+  ]
+
+  tags = local.tenant_tags
+}

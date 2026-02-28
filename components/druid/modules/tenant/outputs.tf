@@ -1,0 +1,44 @@
+output "aurora_endpoint" {
+  description = "Aurora cluster endpoint"
+  value       = module.aurora.cluster_endpoint
+}
+
+output "aurora_port" {
+  description = "Aurora cluster port"
+  value       = module.aurora.cluster_port
+}
+
+output "s3_deepstorage" {
+  description = "Deep storage S3 bucket name"
+  value       = module.deepstorage_bucket.s3_bucket_id
+}
+
+output "s3_indexlogs" {
+  description = "Index logs S3 bucket name"
+  value       = module.indexlogs_bucket.s3_bucket_id
+}
+
+output "s3_msq" {
+  description = "MSQ results S3 bucket name"
+  value       = module.msq_bucket.s3_bucket_id
+}
+
+output "irsa_historical_arn" {
+  description = "IRSA role ARN for historical nodes"
+  value       = module.historical_irsa.iam_role_arn
+}
+
+output "irsa_ingestion_arn" {
+  description = "IRSA role ARN for ingestion nodes"
+  value       = module.ingestion_irsa.iam_role_arn
+}
+
+output "irsa_query_arn" {
+  description = "IRSA role ARN for query nodes"
+  value       = module.query_irsa.iam_role_arn
+}
+
+output "msk_bootstrap" {
+  description = "MSK bootstrap servers (if enabled)"
+  value       = var.tenant_config.msk_enabled ? aws_msk_serverless_cluster.this[0].arn : null
+}

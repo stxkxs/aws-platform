@@ -1,0 +1,14 @@
+include "root" {
+  path = find_in_parent_folders()
+}
+
+include "envcommon" {
+  path           = "${dirname(find_in_parent_folders())}/_envcommon/network.hcl"
+  merge_strategy = "deep"
+}
+
+inputs = {
+  nat_gateways         = 1
+  enable_flow_logs     = false
+  enable_vpc_endpoints = true
+}

@@ -1,0 +1,65 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      component:
+        description: "Component to deploy (e.g., network, cluster, druid, or 'all')"
+        required: true
+        type: string
+        default: "all"
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.action }} ${{ inputs.environment }}/${{ inputs.component }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.11.5"
+      - uses: gruntwork-io/terragrunt-action@v3
+        with:
+          tg_version: "0.99.4"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Validate component
+        run: |
+          VALID_COMPONENTS="all network cluster cluster-addons cluster-bootstrap cost dns druid gateway governance llm mlops observability org-compliance org-cost org-identity org-networking org-scp org-security pipeline rag secrets backup break-glass service-quotas"
+          if ! echo "$VALID_COMPONENTS" | tr ' ' '\n' | grep -qx "${{ inputs.component }}"; then
+            echo "::error::Invalid component: ${{ inputs.component }}"
+            exit 1
+          fi
+
+      - name: Run Terragrunt
+        working-directory: live/${{ inputs.environment }}
+        run: |
+          if [ "${{ inputs.component }}" = "all" ]; then
+            terragrunt run-all ${{ inputs.action }} --terragrunt-non-interactive
+          else
+            cd ${{ inputs.component }}
+            terragrunt ${{ inputs.action }}
+          fi
